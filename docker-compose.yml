@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  netviz:
+    container_name: netviz
+    image: netviz:latest
+    ports:
+      - "8050:8050"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: always
