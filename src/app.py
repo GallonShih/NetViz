@@ -11,39 +11,23 @@ from dash import callback_context
 # 直接從資料生成 Cytoscape 元素
 def generate_cytoscape_elements(df, node_size=2):
     elements = []
-    max_weight = 3  # 因為權重範圍已知 (1-3)，所以設為3即可
+    max_weight = 3
     nodes = set()
     
     # 添加節點和邊
     for _, row in df.iterrows():
-        # 設定節點顏色
         st_id_color = '#81AFBB' if row['st_id'] <= 20 else '#ED859D'
-        order1_color = '#81AFBB' if row['order1'] <= 20 else '#ED859D'
-        order2_color = '#81AFBB' if row['order2'] <= 20 else '#ED859D'
-        order3_color = '#81AFBB' if row['order3'] <= 20 else '#ED859D'
         
         # 確保每個節點只出現一次
         if row['st_id'] not in nodes:
-            elements.append({'data': {'id': str(row['st_id']), 'label': f'{row["st_id"]}', 'score': node_size / 10},
-                             'style': {'background-color': st_id_color}})
+            elements.append({'data': {'id': str(row['st_id']), 'label': f'{row["st_id"]}', 
+                                      'score': node_size / 10, 'color': st_id_color}})
             nodes.add(row['st_id'])
-        if row['order1'] not in nodes:
-            elements.append({'data': {'id': str(row['order1']), 'label': f'{row["order1"]}', 'score': node_size / 10},
-                             'style': {'background-color': order1_color}})
-            nodes.add(row['order1'])
-        if row['order2'] not in nodes:
-            elements.append({'data': {'id': str(row['order2']), 'label': f'{row["order2"]}', 'score': node_size / 10},
-                             'style': {'background-color': order2_color}})
-            nodes.add(row['order2'])
-        if row['order3'] not in nodes:
-            elements.append({'data': {'id': str(row['order3']), 'label': f'{row["order3"]}', 'score': node_size / 10},
-                             'style': {'background-color': order3_color}})
-            nodes.add(row['order3'])
 
-        # 添加邊，將權重和 scale_factor 設為資料
-        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order1']), 'weight': 3/max_weight}})
-        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order2']), 'weight': 2/max_weight}})
-        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order3']), 'weight': 1/max_weight}})
+        # 添加邊
+        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order1']), 'weight': 3/max_weight}, 'color': '#888'})
+        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order2']), 'weight': 2/max_weight}, 'color': '#888'})
+        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order3']), 'weight': 1/max_weight}, 'color': '#888'})
 
     return elements
 
@@ -60,7 +44,8 @@ default_stylesheet = [
             'height': 'mapData(score, 0, 1, 20, 60)',
             'font-size': '10px',
             'text-valign': 'center',
-            'text-halign': 'center'
+            'text-halign': 'center',
+            'background-color': 'data(color)'
         }
     },
     {
@@ -68,15 +53,15 @@ default_stylesheet = [
         'style': {
             'border-width': '2px',
             'border-color': '#877F6C',
-            'background-color': '#877F6C',
+            # 'background-color': '#877F6C',
             'overlay-opacity': 0.2
         }
     },
     {
         'selector': 'edge',
         'style': {
-            'line-color': '#888',
-            'target-arrow-color': '#888',
+            'line-color': 'data(color)',
+            'target-arrow-color': 'data(color)',
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
             'opacity': 0.8,  # 增加透明度
@@ -204,20 +189,37 @@ app.layout = html.Div([
             ],
             value='center',
             clearable=False
-        )
+        ),
+        html.Label("Change Node / Edge Color", style={'font-weight': 'bold', 'font-size': '17px'}),
+        daq.ColorPicker(
+            id='color-picker',
+            value={'hex': '#81AFBB'},  # 初始顏色
+            style={'margin-bottom': '10px'}
+        ),
+        html.Button("Change Color", id='update-color-button', n_clicks=0, 
+                    style={'background-color': '#4CAF50', 'color': 'white',
+                        'border': 'none', 'padding': '10px 20px',
+                        'text-align': 'center', 'text-decoration': 'none',
+                        'display': 'inline-block', 'font-size': '16px',
+                        'border-radius': '5px', 'cursor': 'pointer', 'margin-bottom': '10px'})
     ], style={'width': '30%', 'display': 'inline-block', 'vertical-align': 'top', 'padding-left': '20px'})
 ], style={'display': 'flex', 'padding-left': '40px', 'padding-right': '40px'})
 
 @app.callback(
     Output('cytoscape', 'elements'),
     [Input('upload-data', 'contents'),
-     Input('node-size-slider', 'value')],
-    State('cytoscape', 'elements')
+     Input('node-size-slider', 'value'),
+     Input('update-color-button', 'n_clicks')],
+    [State('cytoscape', 'elements'),
+     State('cytoscape', 'selectedNodeData'),
+     State('cytoscape', 'selectedEdgeData'),
+     State('color-picker', 'value')]
 )
-def update_graph(contents, node_size, existing_elements):
+def update_graph(contents, node_size, n_clicks, existing_elements, selected_nodes, selected_edges, color_value):
     # 檢查 callback 觸發來源
     triggered = callback_context.triggered[0]['prop_id'].split('.')[0]
 
+    # 如果是上傳資料
     if triggered == 'upload-data' and contents:
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
@@ -232,13 +234,32 @@ def update_graph(contents, node_size, existing_elements):
         except Exception as e:
             print(e)
             return existing_elements  # 保留現有元素
-    else:
-        # 更新現有節點的 score
+
+    # 如果是調整節點大小
+    elif triggered == 'node-size-slider':
         for element in existing_elements:
             if 'score' in element['data']:
                 element['data']['score'] = node_size / 10
 
+    # 如果是更新顏色按鈕
+    elif triggered == 'update-color-button':
+        if selected_nodes:
+            # 更新選擇節點的顏色
+            for node in selected_nodes:
+                node_id = node['id']
+                for element in existing_elements:
+                    if element['data'].get('id') == node_id:
+                        element['data']['color'] = color_value['hex']
+        # 更新選擇邊的顏色
+        if selected_edges:
+            for edge in selected_edges:
+                edge_id = edge['id']
+                for element in existing_elements:
+                    if element['data'].get('id') == edge_id:
+                        element['data']['color'] = color_value['hex']
+
     return existing_elements
+
 
 # 更新顯示的檔案名稱
 @app.callback(
