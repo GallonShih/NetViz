@@ -5,9 +5,11 @@ import io
 from dash import Dash, dcc, html
 from dash.dependencies import Input, Output, State
 import dash_cytoscape as cyto
+import dash_daq as daq
+from dash import callback_context
 
 # 直接從資料生成 Cytoscape 元素
-def generate_cytoscape_elements(df, scale_factor=5, node_size=2):
+def generate_cytoscape_elements(df, node_size=2):
     elements = []
     max_weight = 3  # 因為權重範圍已知 (1-3)，所以設為3即可
     nodes = set()
@@ -38,13 +40,10 @@ def generate_cytoscape_elements(df, scale_factor=5, node_size=2):
                              'style': {'background-color': order3_color}})
             nodes.add(row['order3'])
 
-        # 添加邊，並依照權重調整寬度
-        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order1']), 'weight': 3},
-                         'style': {'width': (3 / max_weight) * scale_factor}})
-        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order2']), 'weight': 2},
-                         'style': {'width': (2 / max_weight) * scale_factor}})
-        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order3']), 'weight': 1},
-                         'style': {'width': (1 / max_weight) * scale_factor}})
+        # 添加邊，將權重和 scale_factor 設為資料
+        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order1']), 'weight': 3/max_weight}})
+        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order2']), 'weight': 2/max_weight}})
+        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order3']), 'weight': 1/max_weight}})
 
     return elements
 
@@ -57,8 +56,8 @@ default_stylesheet = [
         'selector': 'node',
         'style': {
             'label': 'data(label)',
-            'width': 'mapData(score, 0, 0.5, 20, 60)',
-            'height': 'mapData(score, 0, 0.5, 20, 60)',
+            'width': 'mapData(score, 0, 1, 20, 60)',
+            'height': 'mapData(score, 0, 1, 20, 60)',
             'font-size': '10px',
             'text-valign': 'center',
             'text-halign': 'center'
@@ -67,9 +66,9 @@ default_stylesheet = [
     {
         'selector': 'node:selected',
         'style': {
-            'border-width': '6px',
-            'border-color': '#FF4500',
-            'background-color': '#FFD700',
+            'border-width': '2px',
+            'border-color': '#877F6C',
+            'background-color': '#877F6C',
             'overlay-opacity': 0.2
         }
     },
@@ -79,7 +78,19 @@ default_stylesheet = [
             'line-color': '#888',
             'target-arrow-color': '#888',
             'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier'
+            'curve-style': 'bezier',
+            'opacity': 0.8,  # 增加透明度
+            'arrow-scale': 1.2,  # 調整箭頭的大小
+            'width': f'mapData(weight, 0, 1, 0, 5)'
+        }
+    },
+    {
+        'selector': 'edge:selected',
+        'style': {
+            'border-width': '2px',
+            'border-color': '#877F6C',
+            'background-color': '#877F6C',
+            'overlay-opacity': 0.2
         }
     }
 ]
@@ -197,33 +208,35 @@ app.layout = html.Div([
     ], style={'width': '30%', 'display': 'inline-block', 'vertical-align': 'top', 'padding-left': '20px'})
 ], style={'display': 'flex', 'padding-left': '40px', 'padding-right': '40px'})
 
-# 處理檔案上傳並更新 Cytoscape 元素的回調函數
 @app.callback(
     Output('cytoscape', 'elements'),
     [Input('upload-data', 'contents'),
-     Input('node-size-slider', 'value'),
-     Input('edge-width-slider', 'value')],
+     Input('node-size-slider', 'value')],
     State('cytoscape', 'elements')
 )
-def update_graph(contents, node_size, scale_factor, existing_elements):
-    if contents is None and not existing_elements:
-        return []  # 如果沒有上傳，並且不存在現有的元素，返回空列表
+def update_graph(contents, node_size, existing_elements):
+    # 檢查 callback 觸發來源
+    triggered = callback_context.triggered[0]['prop_id'].split('.')[0]
 
-    if contents:
+    if triggered == 'upload-data' and contents:
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
         try:
             df = pd.read_excel(io.BytesIO(decoded), dtype={'座號': 'str', '順位1': 'str', '順位2': 'str'})
             df.columns = ['st_id', 'order1', 'order2', 'order3']
             df.dropna(inplace=True)
-            for col in ['st_id', 'order1', 'order2', 'order3']:
-                df[col] = df[col].astype('int')
+            df = df.astype(int)  # 直接轉換為整數型態
 
-            # 生成 Cytoscape 元素
-            return generate_cytoscape_elements(df, scale_factor, node_size)
+            elements = generate_cytoscape_elements(df, node_size)
+            return elements
         except Exception as e:
             print(e)
-            return existing_elements  # 如果上傳失敗，保留現有的元素
+            return existing_elements  # 保留現有元素
+    else:
+        # 更新現有節點的 score
+        for element in existing_elements:
+            if 'score' in element['data']:
+                element['data']['score'] = node_size / 10
 
     return existing_elements
 
@@ -252,55 +265,29 @@ def update_layout(layout_value, n_clicks, node_repulsion):
         layout['nodeRepulsion'] = node_repulsion * 10000
     return layout, f"Seed: {seed}"
 
-# 其他回調函數保持不變
 @app.callback(
     Output('cytoscape', 'stylesheet'),
     [Input('font-size-slider', 'value'),
-     Input('text-position-dropdown', 'value')]
+     Input('text-position-dropdown', 'value'),
+     Input('edge-width-slider', 'value')],
+    State('cytoscape', 'stylesheet')
 )
-def update_stylesheet(font_size, text_position):
-    return [
-        {
-            'selector': 'node',
-            'style': {
-                'label': 'data(label)',
-                'width': 'mapData(score, 0, 0.5, 20, 60)',
-                'height': 'mapData(score, 0, 0.5, 20, 60)',
-                'font-size': f'{font_size}px',
-                'text-valign': text_position,
-                'text-halign': 'center'
-            }
-        },
-        {
-            'selector': 'node:selected',
-            'style': {
-                'border-width': '2px',
-                'border-color': '#877F6C',
-                'background-color': '#877F6C',
-                'overlay-opacity': 0.2
-            }
-        },
-        {
-            'selector': 'edge',
-            'style': {
-                'line-color': '#888',
-                'target-arrow-color': '#888',
-                'target-arrow-shape': 'triangle',
-                'curve-style': 'bezier',
-                'opacity': 0.8,  # 增加透明度
-                'arrow-scale': 1.2  # 調整箭頭的大小
-            }
-        },
-        {
-            'selector': 'edge:selected',
-            'style': {
-                'border-width': '2px',
-                'border-color': '#877F6C',
-                'background-color': '#877F6C',
-                'overlay-opacity': 0.2
-            }
-        }
-    ]
+def update_stylesheet(font_size, text_position, edge_width_scale, current_stylesheet):
+    # 初始化為當前的 stylesheet
+    updated_stylesheet = current_stylesheet.copy()
+
+    # 更新節點樣式
+    node_style = next((style for style in updated_stylesheet if style['selector'] == 'node'), None)
+    if node_style:
+        node_style['style']['font-size'] = f'{font_size}px'
+        node_style['style']['text-valign'] = text_position
+
+    # 更新邊樣式
+    edge_style = next((style for style in updated_stylesheet if style['selector'] == 'edge'), None)
+    if edge_style:
+        edge_style['style']['width'] = f'mapData(weight, 0, 1, 0, {edge_width_scale})'
+
+    return updated_stylesheet
 
 # 回調函數來生成模板
 @app.callback(
@@ -311,10 +298,10 @@ def update_stylesheet(font_size, text_position):
 def download_template(n_clicks):
     # 創建一個範例的模板 DataFrame
     template_data = pd.DataFrame({
-        '座號': ['1', '2', '3'],
-        '順位1': ['2', '3', '1'],
-        '順位2': ['3', '1', '2'],
-        '順位3': ['1', '2', '3']
+        '座號': ['1', '2', '3', '4', '5', '6'],
+        '順位1': ['2', '3', '4', '5', '6', '1'],
+        '順位2': ['3', '4', '5', '6', '1', '2'],
+        '順位3': ['4', '5', '6', '1', '2', '3']
     })
     
     # 生成 Excel 文件並提供下載
