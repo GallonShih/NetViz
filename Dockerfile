@@ -11,7 +11,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 複製應用程式碼
-COPY src/ /app
+COPY app.py /app/
+COPY assets/ /app/assets/
 
 # 暴露服務端口（假設 Flask 預設使用 8050）
 EXPOSE 8050

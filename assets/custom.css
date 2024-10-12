@@ -1,0 +1,32 @@
+/* assets/custom.css */
+label {
+    font-family: 'Georgia', serif; /* 使用藝術風格字體 */
+    color: #2c3e50; /* 深藍色文字 */
+}
+
+.info-icon {
+    cursor: pointer;
+    position: relative;
+}
+
+.tooltip-text {
+    visibility: hidden;
+    white-space: nowrap; /* 確保文字不換行 */
+    opacity: 0;
+    transition: opacity 0.3s;
+    position: absolute;
+    background-color: rgba(169, 169, 169, 0.7); /* 更淡的灰色背景 */
+    color: black; /* 黑色文字 */
+    padding: 5px 10px; /* 增加左右間距 */
+    border-radius: 3px;
+    z-index: 1;
+    font-size: 14px;
+    left: 105%; /* 在驚嘆號右方顯示 */
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.info-icon:hover + .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}

@@ -32,7 +32,10 @@ def generate_cytoscape_elements(df, node_size=2):
     return elements
 
 # 初始化 Dash 應用
-app = Dash(__name__)
+app = Dash(
+    __name__,
+    external_stylesheets=["https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"]
+)
 
 # Cytoscape 樣式配置
 default_stylesheet = [
@@ -83,6 +86,18 @@ default_stylesheet = [
 # 設定 Dash 佈局
 app.layout = html.Div([
     html.Div([
+        html.Div([
+            html.Label([
+                html.Span("N", style={'font-size': '48px', 'font-weight': 'bold'}),  # 首字母較大
+                html.Span("etwork ", style={'font-size': '32px', 'font-weight': 'bold'}),
+                html.Span("V", style={'font-size': '48px', 'font-weight': 'bold'}),  # 首字母較大
+                html.Span("isualization: ", style={'font-size': '32px', 'font-weight': 'bold'}),
+                html.Span("Roommate Preference Network", style={'font-size': '24px', 'font-style': 'italic'})
+            ], style={'display': 'inline-block', 'line-height': '1.2'}),
+            # 使用 Font Awesome 圖標
+            html.I(className="fa-solid fa-circle-info info-icon", id="info-icon", style={'font-size': '24px', 'margin-left': '10px'}),
+            html.Span("Hold Shift + drag to select multiple nodes or edges", className="tooltip-text")
+        ], style={'position': 'relative', 'display': 'inline-block'}),
         cyto.Cytoscape(
             id='cytoscape',
             elements=[],  # 初始時沒有元素
