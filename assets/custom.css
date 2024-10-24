@@ -1,6 +1,6 @@
 /* assets/custom.css */
 label {
-    font-family: 'Georgia', serif; /* 使用藝術風格字體 */
+    font-family: 'Source Han Sans', 'Noto Sans CJK TC', sans-serif;
     color: #2c3e50; /* 深藍色文字 */
 }
 
@@ -29,4 +29,20 @@ label {
 .info-icon:hover + .tooltip-text {
     visibility: visible;
     opacity: 1;
+}
+
+@media (max-width: 768px) {
+    .tooltip-text {
+        font-size: 12px;
+    }
+
+    #cytoscape {
+        height: 400px;
+    }
+    
+    .advanced-settings {
+        display: block;
+        width: 100%;
+        margin-top: 20px;
+    }
 }

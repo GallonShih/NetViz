@@ -1,35 +1,9 @@
-import pandas as pd
-import random
-import base64
-import io
 from dash import Dash, dcc, html
-from dash.dependencies import Input, Output, State
 import dash_cytoscape as cyto
 import dash_daq as daq
-from dash import callback_context
 
-# 直接從資料生成 Cytoscape 元素
-def generate_cytoscape_elements(df, node_size=2):
-    elements = []
-    max_weight = 3
-    nodes = set()
-    
-    # 添加節點和邊
-    for _, row in df.iterrows():
-        st_id_color = '#81AFBB' if row['st_id'] <= 20 else '#ED859D'
-        
-        # 確保每個節點只出現一次
-        if row['st_id'] not in nodes:
-            elements.append({'data': {'id': str(row['st_id']), 'label': f'{row["st_id"]}', 
-                                      'score': node_size / 10, 'color': st_id_color}})
-            nodes.add(row['st_id'])
-
-        # 添加邊
-        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order1']), 'weight': 3/max_weight}, 'color': '#888'})
-        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order2']), 'weight': 2/max_weight}, 'color': '#888'})
-        elements.append({'data': {'source': str(row['st_id']), 'target': str(row['order3']), 'weight': 1/max_weight}, 'color': '#888'})
-
-    return elements
+from utils.graph_utilities import get_default_stylesheet
+from utils.callbacks import register_callbacks
 
 # 初始化 Dash 應用
 app = Dash(
@@ -38,82 +12,69 @@ app = Dash(
 )
 
 # Cytoscape 樣式配置
-default_stylesheet = [
-    {
-        'selector': 'node',
-        'style': {
-            'label': 'data(label)',
-            'width': 'mapData(score, 0, 1, 20, 60)',
-            'height': 'mapData(score, 0, 1, 20, 60)',
-            'font-size': '10px',
-            'text-valign': 'center',
-            'text-halign': 'center',
-            'background-color': 'data(color)'
-        }
-    },
-    {
-        'selector': 'node:selected',
-        'style': {
-            'border-width': '2px',
-            'border-color': '#877F6C',
-            # 'background-color': '#877F6C',
-            'overlay-opacity': 0.2
-        }
-    },
-    {
-        'selector': 'edge',
-        'style': {
-            'line-color': 'data(color)',
-            'target-arrow-color': 'data(color)',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier',
-            'opacity': 0.8,  # 增加透明度
-            'arrow-scale': 1.2,  # 調整箭頭的大小
-            'width': f'mapData(weight, 0, 1, 0, 5)'
-        }
-    },
-    {
-        'selector': 'edge:selected',
-        'style': {
-            'border-width': '2px',
-            'border-color': '#877F6C',
-            'background-color': '#877F6C',
-            'overlay-opacity': 0.2
-        }
-    }
-]
+default_stylesheet = get_default_stylesheet()
 
 # 設定 Dash 佈局
 app.layout = html.Div([
     html.Div([
+        # 包含 Cytoscape 的大區域
         html.Div([
-            html.Label([
-                html.Span("N", style={'font-size': '48px', 'font-weight': 'bold'}),  # 首字母較大
-                html.Span("etwork ", style={'font-size': '32px', 'font-weight': 'bold'}),
-                html.Span("V", style={'font-size': '48px', 'font-weight': 'bold'}),  # 首字母較大
-                html.Span("isualization: ", style={'font-size': '32px', 'font-weight': 'bold'}),
-                html.Span("Roommate Preference Network", style={'font-size': '24px', 'font-style': 'italic'})
-            ], style={'display': 'inline-block', 'line-height': '1.2'}),
-            # 使用 Font Awesome 圖標
-            html.I(className="fa-solid fa-circle-info info-icon", id="info-icon", style={'font-size': '24px', 'margin-left': '10px'}),
-            html.Span("Hold Shift + drag to select multiple nodes or edges", className="tooltip-text")
-        ], style={'position': 'relative', 'display': 'inline-block'}),
-        cyto.Cytoscape(
-            id='cytoscape',
-            elements=[],  # 初始時沒有元素
-            layout={'name': 'cose'},
-            style={'width': '800px', 'height': '600px', 'border': '2px solid black'},
-            stylesheet=default_stylesheet,
-            panningEnabled=True,
-            zoomingEnabled=True,
-            boxSelectionEnabled=True,
-            autoungrabify=False,
-        )
-    ], style={'width': '70%', 'display': 'inline-block', 'vertical-align': 'top'}),
+            html.Div([
+                # 標題與說明
+                html.Label([
+                    html.Span("房間室友偏好", style={'font-size': '48px', 'font-weight': 'bold'}),  # 首字母較大
+                    html.Span("  網絡關係圖 ", style={'font-size': '32px', 'font-weight': 'bold'}),
+                ], style={'display': 'inline-block', 'line-height': '1.2'}),
+                # 使用 Font Awesome 圖標
+                html.I(className="fa-solid fa-circle-info info-icon", id="info-icon", style={'font-size': '24px', 'margin-left': '10px'}),
+                html.Span("按住Shift，可以圈選多個『節點/邊』來移動或編輯顏色(進階設定)", className="tooltip-text")
+            ], style={'position': 'relative', 'display': 'inline-block', 'margin-bottom': '5px'}),
+            
+            dcc.Loading(
+                id="loading-output",
+                type="default",  # 加載動畫樣式，'default', 'circle', 'dot' 皆可
+                children=[
+                    cyto.Cytoscape(
+                        id='cytoscape',
+                        elements=[],  # 初始時沒有元素
+                        layout={'name': 'cose'},
+                        style={'width': '98%', 'height': '600px', 'border': '2px solid black'},
+                        stylesheet=default_stylesheet,
+                        panningEnabled=True,
+                        zoomingEnabled=True,
+                        boxSelectionEnabled=True,
+                        autoungrabify=False,
+                    ),
+                    html.Div(id='hover-info', style={'margin-top': '20px', 'font-weight': 'bold'})
+                ]
+            )
+        ], style={'width': '100%', 'display': 'inline-block', 'vertical-align': 'top'}),
+        
+        # 分組結果顯示區域
+        html.Div([
+            html.Div([                
+                html.Div([
+                    html.Div(id='group-results', style={'width': '100%', 'border-radius': '10px', 'background-color': '#f9f9f9', 'box-shadow': '0 1px 3px rgba(0, 0, 0, 0.1)'})
+                ], style={'width': '900px', 'margin-bottom': '30px'})
+            ])
+        ], id='group-display', style={'display': 'none', 'margin-top': '30px', 'border-top': '1px solid #ccc'})
+    ], style={'width': '70%', 'display': 'inline-block'}),
     html.Div([
+        html.Label("步驟一：根據模板格式修改", style={'font-weight': 'bold', 'font-size': '22px', 'margin-bottom': '5px', 'display': 'block'}),
+        html.Div([
+            html.Button("下載模板", id='download-template-button', n_clicks=0, 
+                        style={'background-color': '#4CAF50', 'color': 'white', 
+                            'border': 'none', 'padding': '10px 20px', 
+                            'text-align': 'center', 'text-decoration': 'none', 
+                            'display': 'inline-block', 'font-size': '16px',
+                            'border-radius': '5px', 'cursor': 'pointer', 'margin-bottom': '10px'}),
+            dcc.Download(id="download-template"),
+        ]),
+
+        html.Label("步驟二：上傳Excel", style={'font-weight': 'bold', 'font-size': '22px', 'margin-bottom': '5px', 'display': 'block'}),
         dcc.Upload(
             id='upload-data',
-            children=html.Div(['Drag and Drop or ', html.A('Select a File')]),
+            children=html.Div(html.A('選擇檔案(excel)')),
             style={
                 'width': '100%',
                 'height': '60px',
@@ -127,221 +88,197 @@ app.layout = html.Div([
             multiple=False
         ),
         html.Div(id='file-name', style={'textAlign': 'center', 'margin-bottom': '10px'}),  # 顯示檔案名稱
+
         html.Div([
-            html.Button("Download Template", id='download-template-button', n_clicks=0, 
-                        style={'background-color': '#4CAF50', 'color': 'white', 
-                            'border': 'none', 'padding': '10px 20px', 
-                            'text-align': 'center', 'text-decoration': 'none', 
-                            'display': 'inline-block', 'font-size': '16px',
-                            'border-radius': '5px', 'cursor': 'pointer', 'margin-bottom': '10px'}),
-            dcc.Download(id="download-template"),
-        ]),
-        html.Label("Layout Style", style={'font-weight': 'bold', 'font-size': '17px'}),
-        dcc.Dropdown(
-            id='layout-dropdown',
-            options=[
-                {'label': 'Cose', 'value': 'cose'},
-                {'label': 'Preset', 'value': 'preset'},
-                {'label': 'Grid', 'value': 'grid'},
-                {'label': 'Circle', 'value': 'circle'},
-                {'label': 'Concentric', 'value': 'concentric'}
-            ],
-            value='cose',
-            clearable=False
-        ),
+            html.Label("步驟三：男生/女生 相關設定", style={'font-weight': 'bold', 'font-size': '22px', 'margin-bottom': '5px', 'display': 'block'}),
+
+            # Combined Male and Female ID Range and Group Sizes
+            html.Div([
+                # Male Configuration
+                html.Div([
+                    html.Label("男生", style={'font-weight': 'bold', 'font-size': '17px'}),
+                    html.Div([
+                        html.Label("編號範圍", style={'font-size': '16px', 'margin-right': '10px'}),
+                        dcc.Input(id='male-start', type='number', min=1, max=40, value=1,
+                                style={'width': '60px', 'padding': '5px', 'border-radius': '5px', 'border': '1px solid #ccc'}),
+                        html.Span("~", style={'font-size': '16px', 'padding': '0 10px'}),
+                        dcc.Input(id='male-end', type='number', min=1, max=40, value=20,
+                                style={'width': '60px', 'padding': '5px', 'border-radius': '5px', 'border': '1px solid #ccc'}),
+                    ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '10px'}),
+
+                    html.Div([
+                        html.Label("分組大小", style={'font-size': '16px', 'margin-right': '10px'}),
+                        dcc.Input(id='male-group-sizes', type='text', value='4, 4, 4, 2', placeholder='例如：4, 4, 4, 2',
+                                style={'width': '220px', 'padding': '5px', 'border-radius': '5px', 'border': '1px solid #ccc'}),
+                    ], style={'display': 'flex', 'align-items': 'center'}),
+                ], style={'background-color': '#f1f1f1', 'padding': '15px', 'border-radius': '10px', 'box-shadow': '0 1px 3px rgba(0, 0, 0, 0.1)', 'margin-bottom': '10px'}),
+                
+                # Female Configuration
+                html.Div([
+                    html.Label("女生", style={'font-weight': 'bold', 'font-size': '17px'}),
+                    html.Div([
+                        html.Label("編號範圍", style={'font-size': '16px', 'margin-right': '10px'}),
+                        dcc.Input(id='female-start', type='number', min=1, max=40, value=21,
+                                style={'width': '60px', 'padding': '5px', 'border-radius': '5px', 'border': '1px solid #ccc'}),
+                        html.Span("~", style={'font-size': '16px', 'padding': '0 10px'}),
+                        dcc.Input(id='female-end', type='number', min=1, max=40, value=40,
+                                style={'width': '60px', 'padding': '5px', 'border-radius': '5px', 'border': '1px solid #ccc'}),
+                    ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '10px'}),
+
+                    html.Div([
+                        html.Label("分組大小", style={'font-size': '16px', 'margin-right': '10px'}),
+                        dcc.Input(id='female-group-sizes', type='text', value='4, 4, 4, 2', placeholder='例如：4, 4, 4, 2',
+                                style={'width': '220px', 'padding': '5px', 'border-radius': '5px', 'border': '1px solid #ccc'}),
+                    ], style={'display': 'flex', 'align-items': 'center'}),
+                ], style={'background-color': '#f1f1f1', 'padding': '15px', 'border-radius': '10px', 'box-shadow': '0 1px 3px rgba(0, 0, 0, 0.1)', 'margin-bottom': '10px'}),
+            ], style={'max-width': '600px', 'margin': 'auto', 'padding': '10px'}),
+
+            # Warning Div
+            html.Div(id='warning', style={'color': 'red', 'font-size': '16px', 'margin-top': '2px'}),
+            # Validation Div
+            html.Div(id='group-size-verification', style={'color': 'red', 'font-size': '16px', 'margin-top': '2px'}),
+        ], style={'padding': '5px'}),
+
         html.Div([
-            html.Button("re-Layout", id='random-seed-button', n_clicks=0, 
+            html.Button("隨機重新繪圖", id='random-seed-button', n_clicks=0, 
                         style={'background-color': '#4CAF50', 'color': 'white', 
                             'border': 'none', 'padding': '10px 20px', 
                             'text-align': 'center', 'text-decoration': 'none', 
                             'display': 'inline-block', 'font-size': '16px',
                             'border-radius': '5px', 'cursor': 'pointer'}),
-            html.Div(id='seed-value', style={'display': 'inline-block', 'margin-left': '10px'})  # 顯示當前 Seed
-        ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '20px', 'margin-top': '20px'}),
-        html.Label("Node Size", style={'font-weight': 'bold', 'font-size': '17px'}),
-        dcc.Slider(
-            id='node-size-slider',
-            min=1,
-            max=10,
-            step=1,
-            value=2,
-            marks={i: str(i) for i in range(1, 11)}
-        ),
-        html.Label("Edge Width Scale Factor", style={'font-weight': 'bold', 'font-size': '17px'}),
-        dcc.Slider(
-            id='edge-width-slider',
-            min=1,
-            max=10,
-            step=1,
-            value=5,
-            marks={i: str(i) for i in range(1, 11)}
-        ),
-        html.Label("Node Repulsion (Distance)", style={'font-weight': 'bold', 'font-size': '17px'}),
-        dcc.Slider(
-            id='node-repulsion-slider',
-            min=1,
-            max=10,
-            step=1,
-            value=4,
-            marks={i: str(i) for i in range(1, 11)}
-        ),
-        html.Label("Font Size", style={'font-weight': 'bold', 'font-size': '17px'}),
-        dcc.Slider(
-            id='font-size-slider',
-            min=5,
-            max=30,
-            step=1,
-            value=12,
-            marks={i: str(i) for i in range(5, 35, 5)}
-        ),
-        html.Label("Text Position", style={'font-weight': 'bold', 'font-size': '17px'}),
-        dcc.Dropdown(
-            id='text-position-dropdown',
-            options=[
-                {'label': 'Top', 'value': 'top'},
-                {'label': 'Center', 'value': 'center'},
-                {'label': 'Bottom', 'value': 'bottom'}
-            ],
-            value='center',
-            clearable=False
-        ),
-        html.Label("Change Node / Edge Color", style={'font-weight': 'bold', 'font-size': '17px'}),
-        daq.ColorPicker(
-            id='color-picker',
-            value={'hex': '#81AFBB'},  # 初始顏色
-            style={'margin-bottom': '10px'}
-        ),
-        html.Button("Change Color", id='update-color-button', n_clicks=0, 
-                    style={'background-color': '#4CAF50', 'color': 'white',
-                        'border': 'none', 'padding': '10px 20px',
-                        'text-align': 'center', 'text-decoration': 'none',
-                        'display': 'inline-block', 'font-size': '16px',
-                        'border-radius': '5px', 'cursor': 'pointer', 'margin-bottom': '10px'})
-    ], style={'width': '30%', 'display': 'inline-block', 'vertical-align': 'top', 'padding-left': '20px'})
+            html.Div(id='seed-value', style={'display': 'inline-block', 'margin-left': '10px', 'visibility': 'hidden'})  # 顯示當前 Seed
+        ], style={'display': 'flex', 'align-items': 'center', 'margin-bottom': '20px', 'margin-top': '5px'}),
+        
+        html.Div([
+            html.Label("步驟四：選擇分組模式", style={'font-weight': 'bold', 'font-size': '22px', 'margin-bottom': '5px', 'display': 'block'}),
+            
+            html.Div([
+                dcc.RadioItems(
+                    id='preference-options',
+                    options=[
+                        {'label': '符合多數學生意願', 'value': 'option1'},
+                        {'label': '人數少的組別也想要同伴', 'value': 'option2'},
+                        {'label': '邊緣人的春天', 'value': 'option3'}
+                    ],
+                    value='option1',  # 預設為第一個選項
+                    labelStyle={
+                        'display': 'inline-block', 
+                        'padding': '10px 20px', 
+                        'border-radius': '5px',
+                        'margin': '5px', 
+                        'border': '1px solid #ccc', 
+                        'cursor': 'pointer',
+                        'background-color': '#f5f5f5',
+                        'font-size': '16px',
+                        'color': '#333'
+                    },
+                    inputStyle={
+                        'margin-right': '10px',
+                        'transform': 'scale(1.2)',  # 放大選項按鈕
+                        'vertical-align': 'middle'
+                    }
+                ),
+            ], style={
+                'background-color': '#f9f9f9', 
+                'padding': '15px', 
+                'border-radius': '10px', 
+                'box-shadow': '0 1px 3px rgba(0, 0, 0, 0.1)', 
+                'margin-bottom': '20px',
+                'display': 'inline-block',
+                'width': '100%'
+            })
+        ]),
+
+        html.Div([
+            html.Button(
+                '網絡圖進階設定', 
+                id='advanced-settings-toggle',
+                n_clicks=0,
+                style={'background-color': '#4CAF50', 'color': 'white', 
+                            'border': 'none', 'padding': '10px 20px', 
+                            'text-align': 'center', 'text-decoration': 'none', 
+                            'display': 'inline-block', 'font-size': '16px',
+                            'border-radius': '5px', 'cursor': 'pointer', 'margin-bottom': '10px'}),
+            html.Div([
+                html.Label("繪製樣式", style={'font-weight': 'bold', 'font-size': '17px'}),
+                dcc.Dropdown(
+                    id='layout-dropdown',
+                    options=[
+                        {'label': 'Cose', 'value': 'cose'},
+                        {'label': 'Preset', 'value': 'preset'},
+                        {'label': 'Grid', 'value': 'grid'},
+                        {'label': 'Circle', 'value': 'circle'},
+                        {'label': 'Concentric', 'value': 'concentric'}
+                    ],
+                    value='cose',
+                    clearable=False
+                ),
+                html.Label("節點大小", style={'font-weight': 'bold', 'font-size': '17px'}),
+                dcc.Slider(
+                    id='node-size-slider',
+                    min=1,
+                    max=10,
+                    step=1,
+                    value=2,
+                    marks={i: str(i) for i in range(1, 11)}
+                ),
+                html.Label("邊寬", style={'font-weight': 'bold', 'font-size': '17px'}),
+                dcc.Slider(
+                    id='edge-width-slider',
+                    min=1,
+                    max=10,
+                    step=1,
+                    value=5,
+                    marks={i: str(i) for i in range(1, 11)}
+                ),
+                html.Label("節點之間的距離", style={'font-weight': 'bold', 'font-size': '17px'}),
+                dcc.Slider(
+                    id='node-repulsion-slider',
+                    min=1,
+                    max=10,
+                    step=1,
+                    value=4,
+                    marks={i: str(i) for i in range(1, 11)}
+                ),
+                html.Label("文字大小", style={'font-weight': 'bold', 'font-size': '17px'}),
+                dcc.Slider(
+                    id='font-size-slider',
+                    min=5,
+                    max=30,
+                    step=1,
+                    value=12,
+                    marks={i: str(i) for i in range(5, 35, 5)}
+                ),
+                html.Label("文字位置", style={'font-weight': 'bold', 'font-size': '17px'}),
+                dcc.Dropdown(
+                    id='text-position-dropdown',
+                    options=[
+                        {'label': 'Top', 'value': 'top'},
+                        {'label': 'Center', 'value': 'center'},
+                        {'label': 'Bottom', 'value': 'bottom'}
+                    ],
+                    value='center',
+                    clearable=False
+                ),
+                html.Label("手動改變『節點/邊』的顏色", style={'font-weight': 'bold', 'font-size': '17px'}),
+                daq.ColorPicker(
+                    id='color-picker',
+                    value={'hex': '#81AFBB'},  # 初始顏色
+                    style={'margin-bottom': '10px'}
+                ),
+                html.Button("更新顏色", id='update-color-button', n_clicks=0, 
+                            style={'background-color': '#4CAF50', 'color': 'white',
+                                'border': 'none', 'padding': '10px 20px',
+                                'text-align': 'center', 'text-decoration': 'none',
+                                'display': 'inline-block', 'font-size': '16px',
+                                'border-radius': '5px', 'cursor': 'pointer', 'margin-bottom': '10px'})
+            ], id='advanced-settings-content', style={'display': 'none'})
+        ])
+    ], style={'width': '30%', 'display': 'inline-block', 'vertical-align': 'top', 'padding-left': '20px', 'margin-top': '30px'})
 ], style={'display': 'flex', 'padding-left': '40px', 'padding-right': '40px'})
 
-@app.callback(
-    Output('cytoscape', 'elements'),
-    [Input('upload-data', 'contents'),
-     Input('node-size-slider', 'value'),
-     Input('update-color-button', 'n_clicks')],
-    [State('cytoscape', 'elements'),
-     State('cytoscape', 'selectedNodeData'),
-     State('cytoscape', 'selectedEdgeData'),
-     State('color-picker', 'value')]
-)
-def update_graph(contents, node_size, n_clicks, existing_elements, selected_nodes, selected_edges, color_value):
-    # 檢查 callback 觸發來源
-    triggered = callback_context.triggered[0]['prop_id'].split('.')[0]
-
-    # 如果是上傳資料
-    if triggered == 'upload-data' and contents:
-        content_type, content_string = contents.split(',')
-        decoded = base64.b64decode(content_string)
-        try:
-            df = pd.read_excel(io.BytesIO(decoded), dtype={'座號': 'str', '順位1': 'str', '順位2': 'str'})
-            df.columns = ['st_id', 'order1', 'order2', 'order3']
-            df.dropna(inplace=True)
-            df = df.astype(int)  # 直接轉換為整數型態
-
-            elements = generate_cytoscape_elements(df, node_size)
-            return elements
-        except Exception as e:
-            print(e)
-            return existing_elements  # 保留現有元素
-
-    # 如果是調整節點大小
-    elif triggered == 'node-size-slider':
-        for element in existing_elements:
-            if 'score' in element['data']:
-                element['data']['score'] = node_size / 10
-
-    # 如果是更新顏色按鈕
-    elif triggered == 'update-color-button':
-        if selected_nodes:
-            # 更新選擇節點的顏色
-            for node in selected_nodes:
-                node_id = node['id']
-                for element in existing_elements:
-                    if element['data'].get('id') == node_id:
-                        element['data']['color'] = color_value['hex']
-        # 更新選擇邊的顏色
-        if selected_edges:
-            for edge in selected_edges:
-                edge_id = edge['id']
-                for element in existing_elements:
-                    if element['data'].get('id') == edge_id:
-                        element['data']['color'] = color_value['hex']
-
-    return existing_elements
-
-
-# 更新顯示的檔案名稱
-@app.callback(
-    Output('file-name', 'children'),
-    Input('upload-data', 'filename')
-)
-def display_file_name(filename):
-    if filename is None:
-        return ""
-    return f"Current File: {filename}"
-
-# 更新 layout 和 Seed 值的顯示
-@app.callback(
-    [Output('cytoscape', 'layout'),
-     Output('seed-value', 'children')],
-    [Input('layout-dropdown', 'value'),
-     Input('random-seed-button', 'n_clicks'),
-     Input('node-repulsion-slider', 'value')]
-)
-def update_layout(layout_value, n_clicks, node_repulsion):
-    seed = random.randint(0, 1000) if n_clicks > 0 else 46
-    layout = {'name': layout_value, 'randomize': True, 'seed': seed}
-    if layout_value == 'cose':
-        layout['nodeRepulsion'] = node_repulsion * 10000
-    return layout, f"Seed: {seed}"
-
-@app.callback(
-    Output('cytoscape', 'stylesheet'),
-    [Input('font-size-slider', 'value'),
-     Input('text-position-dropdown', 'value'),
-     Input('edge-width-slider', 'value')],
-    State('cytoscape', 'stylesheet')
-)
-def update_stylesheet(font_size, text_position, edge_width_scale, current_stylesheet):
-    # 初始化為當前的 stylesheet
-    updated_stylesheet = current_stylesheet.copy()
-
-    # 更新節點樣式
-    node_style = next((style for style in updated_stylesheet if style['selector'] == 'node'), None)
-    if node_style:
-        node_style['style']['font-size'] = f'{font_size}px'
-        node_style['style']['text-valign'] = text_position
-
-    # 更新邊樣式
-    edge_style = next((style for style in updated_stylesheet if style['selector'] == 'edge'), None)
-    if edge_style:
-        edge_style['style']['width'] = f'mapData(weight, 0, 1, 0, {edge_width_scale})'
-
-    return updated_stylesheet
-
-# 回調函數來生成模板
-@app.callback(
-    Output("download-template", "data"),
-    Input("download-template-button", "n_clicks"),
-    prevent_initial_call=True
-)
-def download_template(n_clicks):
-    # 創建一個範例的模板 DataFrame
-    template_data = pd.DataFrame({
-        '座號': ['1', '2', '3', '4', '5', '6'],
-        '順位1': ['2', '3', '4', '5', '6', '1'],
-        '順位2': ['3', '4', '5', '6', '1', '2'],
-        '順位3': ['4', '5', '6', '1', '2', '3']
-    })
-    
-    # 生成 Excel 文件並提供下載
-    return dcc.send_data_frame(template_data.to_excel, "template.xlsx", index=False)
+# 註冊回調
+register_callbacks(app)
 
 if __name__ == '__main__':
     app.run_server(debug=True, host="0.0.0.0", port=8050)
