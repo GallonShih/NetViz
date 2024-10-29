@@ -428,7 +428,7 @@ def apply_partition_and_color(df, male_range, female_range, elements, male_targe
         """
         iteration = 1
         max_iteration = 10
-        weight = 5
+        weight = 30
         best_groups = original_groups
         while iteration <= max_iteration:
             # 根據當前 weight 修改圖的權重
@@ -446,7 +446,7 @@ def apply_partition_and_color(df, male_range, female_range, elements, male_targe
             if new_best_groups != best_groups:
                 return new_best_groups
             
-            weight += 5
+            weight += 10
             iteration += 1
 
         return best_groups

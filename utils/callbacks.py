@@ -196,31 +196,40 @@ def register_callbacks(app):
         ]
 
         # 加權選擇偏好
-        def weighted_random_choice(choices, weights):
-            total = sum(weights)
+        def weighted_random_choice(choices, weights, exclude):
+            filtered_choices = [choice for choice in choices if choice not in exclude]
+            if not filtered_choices:  # 如果沒有可選擇項，直接返回 None
+                return None
+            filtered_weights = [weights[choices.index(choice)] for choice in filtered_choices]
+            total = sum(filtered_weights)
             r = random.uniform(0, total)
             upto = 0
-            for choice, weight in zip(choices, weights):
+            for choice, weight in zip(filtered_choices, filtered_weights):
                 if upto + weight >= r:
                     return choice
                 upto += weight
 
         # 根據小團體優先從小組內選擇順位，減少跨組的可能性
         def generate_order_with_preference(group, subgroups, isolated_member):
-            order1 = []
-            order2 = []
-            order3 = []
+            order1, order2, order3 = [], [], []
+            
             for student in group:
                 # 找到學生所在的小組
                 subgroup = [sg for sg in subgroups if student in sg][0]
+                exclude_set = set([student, isolated_member])
 
                 # 如果學生是孤立者，則他可以正常選擇其他人
                 if student == isolated_member:
                     # 孤立者可以選擇小組內其他人，或者全組其他人
                     possible_choices = [s for s in group if s != student]
-                    order1.append(weighted_random_choice(possible_choices, [1] * len(possible_choices)))
-                    order2.append(weighted_random_choice(possible_choices, [1] * len(possible_choices)))
-                    order3.append(weighted_random_choice(possible_choices, [1] * len(possible_choices)))
+                    order1_choice = weighted_random_choice(possible_choices, [1] * len(possible_choices), exclude_set)
+                    order1.append(order1_choice)
+                    exclude_set.add(order1_choice)
+                    order2_choice = weighted_random_choice(possible_choices, [1] * len(possible_choices), exclude_set)
+                    order2.append(order2_choice)
+                    exclude_set.add(order2_choice)
+                    order3_choice = weighted_random_choice(possible_choices, [1] * len(possible_choices), exclude_set)
+                    order3.append(order3_choice)
                     continue
 
                 # 對於其他人，排除孤立者
@@ -228,9 +237,16 @@ def register_callbacks(app):
                 other_choices = [s for s in group if s not in possible_choices and s != student and s != isolated_member]
 
                 # 設置選擇權重，讓同組優先
-                order1.append(weighted_random_choice(possible_choices + other_choices, [1.0] * len(possible_choices) + [0.0] * len(other_choices)))
-                order2.append(weighted_random_choice(possible_choices + other_choices, [0.95] * len(possible_choices) + [0.05] * len(other_choices)))
-                order3.append(weighted_random_choice(possible_choices + other_choices, [0.9] * len(possible_choices) + [0.1] * len(other_choices)))
+                order1_choice = weighted_random_choice(possible_choices + other_choices, [1.0] * len(possible_choices) + [0.0] * len(other_choices), exclude_set)
+                order1.append(order1_choice)
+                exclude_set.add(order1_choice)
+
+                order2_choice = weighted_random_choice(possible_choices + other_choices, [0.95] * len(possible_choices) + [0.05] * len(other_choices), exclude_set)
+                order2.append(order2_choice)
+                exclude_set.add(order2_choice)
+
+                order3_choice = weighted_random_choice(possible_choices + other_choices, [0.9] * len(possible_choices) + [0.1] * len(other_choices), exclude_set)
+                order3.append(order3_choice)
 
             return order1, order2, order3
 
