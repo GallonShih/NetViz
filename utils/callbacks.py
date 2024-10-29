@@ -228,9 +228,9 @@ def register_callbacks(app):
                 other_choices = [s for s in group if s not in possible_choices and s != student and s != isolated_member]
 
                 # 設置選擇權重，讓同組優先
-                order1.append(weighted_random_choice(possible_choices + other_choices, [0.8] * len(possible_choices) + [0.2] * len(other_choices)))
-                order2.append(weighted_random_choice(possible_choices + other_choices, [0.7] * len(possible_choices) + [0.3] * len(other_choices)))
-                order3.append(weighted_random_choice(possible_choices + other_choices, [0.6] * len(possible_choices) + [0.4] * len(other_choices)))
+                order1.append(weighted_random_choice(possible_choices + other_choices, [1.0] * len(possible_choices) + [0.0] * len(other_choices)))
+                order2.append(weighted_random_choice(possible_choices + other_choices, [0.95] * len(possible_choices) + [0.05] * len(other_choices)))
+                order3.append(weighted_random_choice(possible_choices + other_choices, [0.9] * len(possible_choices) + [0.1] * len(other_choices)))
 
             return order1, order2, order3
 
