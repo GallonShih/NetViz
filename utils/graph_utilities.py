@@ -352,12 +352,12 @@ def weight_edges_for_smallest_group(directed_G, optimal_groups, weight=2):
     for group_id in smallest_groups:
         for node in optimal_groups[group_id]:
             for neighbor in directed_G.successors(node):
-                # 確保 neighbor 不在同一組內
-                if neighbor not in optimal_groups[group_id]:
-                    current_weight = directed_G[node][neighbor]['weight']
-                    # 將指向其他組的邊的權重加倍
-                    updated_G[node][neighbor]['weight'] = current_weight * weight
-                    # print(f"節點 {node} 指向節點 {neighbor} 的邊權重已加倍，新的權重為 {updated_G[node][neighbor]['weight']}")
+                # 確保 neighbor 不在同一組內 (remove)
+                # if neighbor not in optimal_groups[group_id]: (remove)
+                current_weight = directed_G[node][neighbor]['weight']
+                # 將指向其他組的邊的權重加倍
+                updated_G[node][neighbor]['weight'] = current_weight * weight
+                # print(f"節點 {node} 指向節點 {neighbor} 的邊權重已加倍，新的權重為 {updated_G[node][neighbor]['weight']}")
 
     return updated_G
 
@@ -428,7 +428,7 @@ def apply_partition_and_color(df, male_range, female_range, elements, male_targe
         """
         iteration = 1
         max_iteration = 10
-        weight = 30
+        weight = 5
         best_groups = original_groups
         while iteration <= max_iteration:
             # 根據當前 weight 修改圖的權重
@@ -446,7 +446,7 @@ def apply_partition_and_color(df, male_range, female_range, elements, male_targe
             if new_best_groups != best_groups:
                 return new_best_groups
             
-            weight += 10
+            weight += 5
             iteration += 1
 
         return best_groups
